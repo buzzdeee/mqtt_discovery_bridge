@@ -3,6 +3,7 @@ import json
 import re
 import os
 import paho.mqtt.client as mqtt
+from collections import defaultdict
 
 # --- CONFIGURATION ---
 BROKER_HOST = "127.0.0.1"
@@ -11,7 +12,7 @@ OH_BROKER_ID = "mosquitto"  # MUST match your openHAB MQTT Broker Thing ID
 THINGS_FILE = "/etc/openhab/things/mqtt_autodiscovered.things"
 CACHE_FILE = "/var/db/mqtt_discovery_cache.json"
 
-discovered_devices = {}
+discovered_devices = defaultdict(lambda: {"name": "Unknown Device", "channels": {}})
 
 # Load persistent cache if it exists on boot
 if os.path.exists(CACHE_FILE):
@@ -42,7 +43,8 @@ def write_openhab_config():
         f.write("// Tailored natively for OpenBSD environments. Do not modify manually.\n\n")
         
         for thing_id, dev in discovered_devices.items():
-            f.write(f'Thing mqtt:topic:{OH_BROKER_ID}:{thing_id} "{dev["label"]}" (mqtt:broker:{OH_BROKER_ID}) {{\n')
+            friendly_name = dev.get("label", thing_id)
+            f.write(f'Thing mqtt:topic:{OH_BROKER_ID}:{thing_id} "{friendly_name}" (mqtt:broker:{OH_BROKER_ID}) {{\n')
             f.write("    Channels:\n")
             for channel_line in dev["channels"].values():
                 f.write(f"{channel_line}\n")
@@ -182,6 +184,8 @@ def on_message(client, userdata, msg):
                 eff_props = [
                     f'stateTopic="{eff_state}"',
                     f'commandTopic="{eff_cmd}"',
+                    # This tells openHAB: wrap the string %s in the JSON wrapper before publishing
+                    'formatBeforePublish="{\\"effect\\":\\"%s\\"}"',
                     f'commandOptions="{options_string}"'
                 ]
             else:
@@ -189,7 +193,6 @@ def on_message(client, userdata, msg):
             
             eff_entry = f'        Type string : {object_id}_effect "Effect Control" [ {", ".join(eff_props)} ]'
             discovered_devices[node_id]["channels"][f"{object_id}_effect"] = eff_entry
-
 
     # Guard string cleaning transformations against NoneType exceptions
     chan_label = str(raw_name).replace(str(thing_label), "").strip().title()
