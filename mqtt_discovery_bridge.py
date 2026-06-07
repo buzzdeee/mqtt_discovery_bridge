@@ -194,6 +194,75 @@ def on_message(client, userdata, msg):
             eff_entry = f'        Type string : {object_id}_effect "Effect Control" [ {", ".join(eff_props)} ]'
             discovered_devices[node_id]["channels"][f"{object_id}_effect"] = eff_entry
 
+        # =====================================================================
+        # 1. COMPOSITE DETECTOR: INCHING CONTROL SET
+        # =====================================================================
+        if "inching_control_set" in object_id:
+            cmd_topic = f"{state_topic}/set"
+            
+            # Sub-Control: Inching State Trigger Toggle (ENABLE/DISABLE)
+            discovered_devices[node_id]["channels"]["inching_control"] = (
+                f'        Type switch : inching_control "Inching Master Switch" [\n'
+                f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.inching_control_set.inching_control",\n'
+                f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"inching_control_set\\": {{\\"inching_control\\": \\"%s\\"}}}}",\n'
+                f'            on="ENABLE", off="DISABLE"\n'
+                f'        ]'
+            )
+            # Sub-Control: Inching Mode Direction (ON/OFF)
+            discovered_devices[node_id]["channels"]["inching_mode"] = (
+                f'        Type switch : inching_mode "Inching Target Mode" [\n'
+                f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.inching_control_set.inching_mode",\n'
+                f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"inching_control_set\\": {{\\"inching_mode\\": \\"%s\\"}}}}",\n'
+                f'            on="ON", off="OFF"\n'
+                f'        ]'
+            )
+            # Sub-Control: Inching Auto-off Duration Timer (Numeric Seconds)
+            discovered_devices[node_id]["channels"]["inching_time"] = (
+                f'        Type number : inching_time "Inching Time Delay" [\n'
+                f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.inching_control_set.inching_time",\n'
+                f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"inching_control_set\\": {{\\"inching_time\\": %s}}}}"\n'
+                f'        ]'
+            )
+
+        # =====================================================================
+        # 2. COMPOSITE DETECTOR: OVERLOAD/OUTLET PROTECTION
+        # =====================================================================
+        elif "overload_protection" in object_id or "outlet_control_protect" in object_id:
+            cmd_topic = f"{state_topic}/set"
+            
+            # Loop dynamically over the metric categories to save code space
+            for metric, unit in [("power", "W"), ("voltage", "V"), ("current", "A")]:
+                for prefix in ["max", "min"]:
+                    field_name = f"{prefix}_{metric}"
+                    enable_name = f"enable_{prefix}_{metric}"
+                    
+                    # Generate the Enable/Disable Protection Switch Toggles
+                    discovered_devices[node_id]["channels"][enable_name] = (
+                        f'        Type switch : {enable_name} "Protect {prefix.upper()} {metric.title()} Enable" [\n'
+                        f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.overload_protection.{enable_name}",\n'
+                        f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{enable_name}\\": \\"%s\\"}}}}",\n'
+                        f'            on="ENABLE", off="DISABLE"\n'
+                        f'        ]'
+                    )
+                    # Generate the Numeric Limit Threshold Sliders
+                    discovered_devices[node_id]["channels"][field_name] = (
+                        f'        Type number : {field_name} "Protect {prefix.upper()} {metric.title()} Threshold" [\n'
+                        f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.overload_protection.{field_name}",\n'
+                        f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{field_name}\\": %s}}}}",\n'
+                        f'            unit="{unit}"\n'
+                        f'        ]'
+                    )
+            
+            # The general master protection safety switch feature 
+            discovered_devices[node_id]["channels"]["outlet_control_protect"] = (
+                f'        Type switch : outlet_control_protect "Master Protection Safety" [\n'
+                f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.outlet_control_protect",\n'
+                f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"outlet_control_protect\\": %s}}",\n'
+                f'            on="true", off="false"\n'
+                f'        ]'
+            )
+
+
     # Guard string cleaning transformations against NoneType exceptions
     chan_label = str(raw_name).replace(str(thing_label), "").strip().title()
     if not chan_label:
