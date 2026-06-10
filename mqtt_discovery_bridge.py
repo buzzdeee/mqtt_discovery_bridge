@@ -230,30 +230,36 @@ def on_message(client, userdata, msg):
         elif "overload_protection" in object_id or "outlet_control_protect" in object_id:
             cmd_topic = f"{state_topic}/set"
             
-            # Loop dynamically over the metric categories to save code space
-            for metric, unit in [("power", "W"), ("voltage", "V"), ("current", "A")]:
-                for prefix in ["max", "min"]:
-                    field_name = f"{prefix}_{metric}"
-                    enable_name = f"enable_{prefix}_{metric}"
-                    
-                    # Generate the Enable/Disable Protection Switch Toggles
-                    discovered_devices[node_id]["channels"][enable_name] = (
-                        f'        Type switch : {enable_name} "Protect {prefix.upper()} {metric.title()} Enable" [\n'
-                        f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.overload_protection.{enable_name}",\n'
-                        f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{enable_name}\\": \\"%s\\"}}}}",\n'
-                        f'            on="ENABLE", off="DISABLE"\n'
-                        f'        ]'
-                    )
-                    # Generate the Numeric Limit Threshold Sliders
-                    discovered_devices[node_id]["channels"][field_name] = (
-                        f'        Type number : {field_name} "Protect {prefix.upper()} {metric.title()} Threshold" [\n'
-                        f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.overload_protection.{field_name}",\n'
-                        f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{field_name}\\": %s}}}}",\n'
-                        f'            unit="{unit}"\n'
-                        f'        ]'
-                    )
+            # Whitelist of fields actually supported by Sonoff hardware profiles
+            supported_switches = ["enable_min_power", "enable_min_voltage", "enable_min_current"]
+            supported_numbers = [
+                ("max_power", "W"), ("min_power", "W"),
+                ("max_voltage", "V"), ("min_voltage", "V"),
+                ("max_current", "A"), ("min_current", "A")
+            ]
+
+            # 1. Generate Supported Switch Toggles
+            for enable_name in supported_switches:
+                # Add a REGEX guard directly to the channel to cleanly ignore the key if missing
+                discovered_devices[node_id]["channels"][enable_name] = (
+                    f'        Type switch : {enable_name} "Protect {enable_name.replace("enable_", "").replace("_", " ").title()} Enable" [\n'
+                    f'            stateTopic="{state_topic}", transformationPattern="REGEX:(.*{enable_name}.*)∩JSONPATH:$.overload_protection.{enable_name}",\n'
+                    f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{enable_name}\\": \\"%s\\"}}}}",\n'
+                    f'            on="ENABLE", off="DISABLE"\n'
+                    f'        ]'
+                )
+
+            # 2. Generate Supported Numeric Threshold Sliders
+            for field_name, unit in supported_numbers:
+                discovered_devices[node_id]["channels"][field_name] = (
+                    f'        Type number : {field_name} "Protect {field_name.replace("_", " ").title()} Threshold" [\n'
+                    f'            stateTopic="{state_topic}", transformationPattern="REGEX:(.*{field_name}.*)∩JSONPATH:$.overload_protection.{field_name}",\n'
+                    f'            commandTopic="{cmd_topic}", formatBeforePublish="{{\\"overload_protection\\": {{\\"{field_name}\\": %s}}}}",\n'
+                    f'            unit="{unit}"\n'
+                    f'        ]'
+                )
             
-            # The general master protection safety switch feature 
+            # 3. Master Protection Safety Switch
             discovered_devices[node_id]["channels"]["outlet_control_protect"] = (
                 f'        Type switch : outlet_control_protect "Master Protection Safety" [\n'
                 f'            stateTopic="{state_topic}", transformationPattern="JSONPATH:$.outlet_control_protect",\n'
