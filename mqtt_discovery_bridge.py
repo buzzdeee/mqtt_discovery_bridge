@@ -79,13 +79,19 @@ def on_message(client, userdata, msg):
         return
 
     device_info = payload.get("device", {})
+
+    # Check the JSON payload model metadata to see if Zigbee2MQTT explicitly calls this a Group
+    is_group = device_info.get("model") == "Group"
     
     # Securely retrieve string values, defaulting safely if they are None or missing
     raw_name = payload.get("name")
     if raw_name is None:
         raw_name = object_id
 
+
     thing_label = device_info.get("name") or raw_name or node_id
+    if is_group and "group" not in str(thing_label).lower():
+        thing_label = f"Group {thing_label}"
     
     state_topic = payload.get("state_topic", "")
     command_topic = payload.get("command_topic", "")
@@ -101,12 +107,23 @@ def on_message(client, userdata, msg):
 
     # Component Translation Mapping Logic
     if component == "binary_sensor":
-        oh_type = "switch"
-        # Safely convert to string and escape internal double quotes
-        on_val = str(payload.get("payload_on", "true")).replace('"', '\\"')
-        off_val = str(payload.get("payload_off", "false")).replace('"', '\\"')
-        props.append(f'on="{on_val}"')
-        props.append(f'off="{off_val}"')
+        # Check if this binary sensor is tracking human presence/occupancy/motion
+        is_presence = any(x in object_id.lower() for x in ["occupancy", "presence", "motion"]) or \
+                      payload.get("device_class") in ["occupancy", "presence", "motion"]
+        
+        if is_presence:
+            oh_type = "contact"
+            # openHAB Contact channels use 'open' and 'closed' properties instead of 'on' and 'off'
+            on_val = str(payload.get("payload_on", "true")).lower().replace('"', '\\"')
+            off_val = str(payload.get("payload_off", "false")).lower().replace('"', '\\"')
+            props.append(f'open="{on_val}"')
+            props.append(f'closed="{off_val}"')
+        else:
+            oh_type = "switch"
+            on_val = str(payload.get("payload_on", "true")).lower().replace('"', '\\"')
+            off_val = str(payload.get("payload_off", "false")).lower().replace('"', '\\"')
+            props.append(f'on="{on_val}"')
+            props.append(f'off="{off_val}"')
         
     elif component == "sensor":
         # Identify measurements and numeric metrics vs raw textual streams
