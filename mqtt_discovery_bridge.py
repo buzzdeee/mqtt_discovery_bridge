@@ -286,9 +286,15 @@ def on_message(client, userdata, msg):
             )
 
 
+    if device_info.get("name"):
+        thing_label = device_info.get("name")
+    
+    if is_group and "group" not in str(thing_label).lower():
+        thing_label = f"Group {thing_label}"
+
     # Guard string cleaning transformations against NoneType exceptions
     chan_label = str(raw_name).replace(str(thing_label), "").strip().title()
-    if not chan_label:
+    if not chan_label or chan_label.lower() == "null" or chan_label == object_id:
         chan_label = object_id.title()
         
     channel_entry = f'        Type {oh_type} : {object_id} "{chan_label}" [ {", ".join(props)} ]'
