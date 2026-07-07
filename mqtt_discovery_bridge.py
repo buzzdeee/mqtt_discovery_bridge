@@ -143,13 +143,25 @@ def on_message(client, userdata, msg):
 
         # --- EXTRACT ADVANCED LIGHT BULB CONTROLS ---
         if component == "light":
+            # Ensure the main light ON/OFF switch parses incoming updates properly
+            if "transformationPattern" not in [p.split('=')[0] for p in props]:
+                props.append('transformationPattern="JSONPATH:$.state"')
+
             # 1. Handle Brightness Dimmer Slider
             if payload.get("brightness") or "brightness_command_topic" in payload:
                 b_state = payload.get("brightness_state_topic", state_topic)
                 b_cmd = payload.get("brightness_command_topic", f"{state_topic}/set")
                 b_trans = parse_jsonpath(payload.get("brightness_value_template")) or "JSONPATH:$.brightness"
                 
-                b_props = [f'stateTopic="{b_state}"', f'commandTopic="{b_cmd}"', f'transformationPattern="{b_trans}"', 'min="0"', 'max="254"']
+                # FIXED: Added formatBeforePublish for outgoing brightness
+                b_props = [
+                    f'stateTopic="{b_state}"', 
+                    f'commandTopic="{b_cmd}"', 
+                    f'transformationPattern="{b_trans}"', 
+                    'formatBeforePublish="{\\"brightness\\": %s}"',
+                    'min="0"', 
+                    'max="254"'
+                ]
                 b_entry = f'        Type dimmer : {object_id}_brightness "Brightness" [ {", ".join(b_props)} ]'
                 discovered_devices[node_id]["channels"][f"{object_id}_brightness"] = b_entry
 
@@ -158,12 +170,19 @@ def on_message(client, userdata, msg):
                 ct_state = payload.get("color_temp_state_topic", state_topic)
                 ct_cmd = payload.get("color_temp_command_topic", f"{state_topic}/set")
                 ct_trans = parse_jsonpath(payload.get("color_temp_value_template")) or "JSONPATH:$.color_temp"
-                
-                # Dynamic extraction of mired limits if provided by the hardware profile
+                    
                 min_m = payload.get("min_mireds", 150)
                 max_m = payload.get("max_mireds", 500)
-                
-                ct_props = [f'stateTopic="{ct_state}"', f'commandTopic="{ct_cmd}"', f'transformationPattern="{ct_trans}"', f'min="{min_m}"', f'max="{max_m}"']
+                    
+                # FIXED: Added formatBeforePublish for outgoing color temperature
+                ct_props = [
+                    f'stateTopic="{ct_state}"', 
+                    f'commandTopic="{ct_cmd}"', 
+                    f'transformationPattern="{ct_trans}"', 
+                    'formatBeforePublish="{\\"color_temp\\": %s}"',
+                    f'min="{min_m}"', 
+                    f'max="{max_m}"'
+                ]
                 ct_entry = f'        Type dimmer : {object_id}_color_temp "Color Temperature" [ {", ".join(ct_props)} ]'
                 discovered_devices[node_id]["channels"][f"{object_id}_color_temp"] = ct_entry
 
@@ -172,14 +191,16 @@ def on_message(client, userdata, msg):
             if "color" in payload or any(mode in color_modes for mode in ["xy", "hs", "rgb"]):
                 c_state = payload.get("color_state_topic", state_topic)
                 c_cmd = payload.get("color_command_topic", f"{state_topic}/set")
-                
+                  
+                # FIXED: Swapped 'color' channel type to 'string' to stop incoming state parsing crashes, 
+                # while ensuring openHAB safely packages outbound dashboard HSB commands for Tuya
                 c_props = [
                     f'stateTopic="{c_state}"',
                     f'commandTopic="{c_cmd}"',
-                    'transformationPattern="JSONPATH:$.color"',
+                    'transformationPattern="JSONPATH:$.color_mode"',
                     'formatBeforePublish="{\\"color\\":{\\"hsb\\":\\"%s\\"}}"'
                 ]
-                c_entry = f'        Type color : {object_id}_color "Color Control" [ {", ".join(c_props)} ]'
+                c_entry = f'        Type string : {object_id}_color "Color Control" [ {", ".join(c_props)} ]'
                 discovered_devices[node_id]["channels"][f"{object_id}_color"] = c_entry
 
         # --- UNIVERSAL DYNAMIC EFFECTS EXTRACTOR ---
@@ -286,6 +307,12 @@ def on_message(client, userdata, msg):
     chan_label = str(raw_name).replace(str(thing_label), "").strip().title()
     if not chan_label or chan_label.lower() == "null" or chan_label == object_id:
         chan_label = object_id.title()
+
+    # Ensure standard light state switches extract the ON/OFF state cleanly
+    if object_id == "light" and "transformationPattern" not in [p.split('=')[0] for p in props]:
+        props.append('transformationPattern="JSONPATH:$.state"')
+
+
         
     channel_entry = f'        Type {oh_type} : {object_id} "{chan_label}" [ {", ".join(props)} ]'
 
