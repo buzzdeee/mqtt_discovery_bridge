@@ -88,7 +88,7 @@ def on_message(client, userdata, msg):
     if raw_name is None:
         raw_name = object_id
 
-
+    # --- FIXED: Fallback assignment for friendly labeling managed in one place ---
     thing_label = device_info.get("name") or raw_name or node_id
     if is_group and "group" not in str(thing_label).lower():
         thing_label = f"Group {thing_label}"
@@ -113,11 +113,11 @@ def on_message(client, userdata, msg):
         
         if is_presence:
             oh_type = "contact"
-            # openHAB Contact channels use 'open' and 'closed' properties instead of 'on' and 'off'
+            # --- FIXED: Contact mapping for raw JSON booleans must utilize 'on' and 'off' string filters ---
             on_val = str(payload.get("payload_on", "true")).lower().replace('"', '\\"')
             off_val = str(payload.get("payload_off", "false")).lower().replace('"', '\\"')
-            props.append(f'open="{on_val}"')
-            props.append(f'closed="{off_val}"')
+            props.append(f'on="{on_val}"')
+            props.append(f'off="{off_val}"')
         else:
             oh_type = "switch"
             on_val = str(payload.get("payload_on", "true")).lower().replace('"', '\\"')
@@ -173,9 +173,6 @@ def on_message(client, userdata, msg):
                 c_state = payload.get("color_state_topic", state_topic)
                 c_cmd = payload.get("color_command_topic", f"{state_topic}/set")
                 
-                # openHAB's MQTT binding expects a specialized JSON format for color transitions
-                # formatBeforePublish sends: {"color":{"r":X,"g":Y,"b":Z}} or {"color":{"x":X,"y":Y}}
-                # Zigbee2MQTT natively accepts {"color":{"h":H,"s":S,"b":B}} (HSB) which openHAB supplies
                 c_props = [
                     f'stateTopic="{c_state}"',
                     f'commandTopic="{c_cmd}"',
@@ -201,7 +198,6 @@ def on_message(client, userdata, msg):
                 eff_props = [
                     f'stateTopic="{eff_state}"',
                     f'commandTopic="{eff_cmd}"',
-                    # This tells openHAB: wrap the string %s in the JSON wrapper before publishing
                     'formatBeforePublish="{\\"effect\\":\\"%s\\"}"',
                     f'commandOptions="{options_string}"'
                 ]
@@ -285,13 +281,7 @@ def on_message(client, userdata, msg):
                 f'        ]'
             )
 
-
-    if device_info.get("name"):
-        thing_label = device_info.get("name")
-    
-    if is_group and "group" not in str(thing_label).lower():
-        thing_label = f"Group {thing_label}"
-
+    # --- FIXED: Removed the redundant thing_label reset logic block that overrode group titles ---
     # Guard string cleaning transformations against NoneType exceptions
     chan_label = str(raw_name).replace(str(thing_label), "").strip().title()
     if not chan_label or chan_label.lower() == "null" or chan_label == object_id:
@@ -302,6 +292,9 @@ def on_message(client, userdata, msg):
     # Commit layout to runtime dictionary
     if node_id not in discovered_devices:
         discovered_devices[node_id] = {"label": thing_label, "channels": {}}
+    else:
+        # Dynamically keep the label updated if it shifts during runtime announcements
+        discovered_devices[node_id]["label"] = thing_label
     
     discovered_devices[node_id]["channels"][object_id] = channel_entry
     write_openhab_config()
