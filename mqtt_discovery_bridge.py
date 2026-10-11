@@ -223,7 +223,13 @@ def on_message(client, userdata, msg):
                     f'commandOptions="{options_string}"'
                 ]
             else:
-                eff_props = [f'stateTopic="{eff_state}"', f'commandTopic="{eff_cmd}"']
+                eff_trans = parse_jsonpath(payload.get("effect_value_template")) or "JSONPATH:$.effect"
+                eff_props = [
+                    f'stateTopic="{eff_state}"',
+                    f'commandTopic="{eff_cmd}"',
+                    f'transformationPattern="{eff_trans}"',
+                    'formatBeforePublish="{\\"effect\\":\\"%s\\"}"'
+                ]
             
             eff_entry = f'        Type string : {object_id}_effect "Effect Control" [ {", ".join(eff_props)} ]'
             discovered_devices[node_id]["channels"][f"{object_id}_effect"] = eff_entry
