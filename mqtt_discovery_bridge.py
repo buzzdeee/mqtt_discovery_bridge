@@ -318,9 +318,12 @@ def on_message(client, userdata, msg):
     if object_id == "light" and "transformationPattern" not in [p.split('=')[0] for p in props]:
         props.append('transformationPattern="JSONPATH:$.state"')
 
-
-        
     channel_entry = f'        Type {oh_type} : {object_id} "{chan_label}" [ {", ".join(props)} ]'
+
+    # --- THE SINGLE BUGFIX GUARD ---
+    # Ignore standalone fallback channel entries that lack a stateTopic (e.g. stateTopic="")
+    if 'stateTopic=""' in channel_entry:
+        return
 
     # Commit layout to runtime dictionary
     if node_id not in discovered_devices:
@@ -340,3 +343,4 @@ client.connect(BROKER_HOST, BROKER_PORT, 60)
 client.subscribe("homeassistant/+/+/+/config")
 print("OpenBSD HA-Discovery Bridge listening on Mosquitto...")
 client.loop_forever()
+
